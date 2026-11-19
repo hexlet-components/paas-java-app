@@ -6,12 +6,31 @@ import "package://github.com/jdx/hk/releases/download/v2.8.1/hk@2.8.1#/Builtins.
 // Быстрые проверки идут на каждый коммит. Сеть и долгие шаги вынесены в all:
 // их гоняют check, pre-push и CI.
 local fast = new Mapping<String, Step> {
+  ["spotless"] {
+    glob = List("**/*.java")
+    check = "./gradlew spotlessCheck --quiet"
+    fix = "./gradlew spotlessApply --quiet"
+  }
+  ["hadolint"] {
+    glob = List("**/Dockerfile*")
+    check = "hadolint {{files}}"
+  }
   ["rumdl"] = Builtins.rumdl
   ["typos"] = Builtins.typos
   ["jactionlint"] = Builtins.jactionlint
 }
 
 local all = (fast) {
+  // Error Prone встроен в компилятор: шаг компилирует код и тесты, а -Werror
+  // превращает предупреждения в ошибки.
+  ["error-prone"] {
+    glob = List("**/*.java", "**/*.kts", "gradle/libs.versions.toml")
+    check = "./gradlew compileJava compileTestJava --quiet"
+  }
+  ["osv-scanner"] {
+    glob = List("gradle.lockfile")
+    check = "osv-scanner scan source --lockfile gradle.lockfile"
+  }
   ["lychee"] {
     glob = List("**/*.md")
     check = "lychee --config lychee.toml --no-progress {{files}}"

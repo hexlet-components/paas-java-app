@@ -1,2 +1,5 @@
-
 .lycheecache
+.gradle/
+build/
+.env
+.rumdl_cache/
