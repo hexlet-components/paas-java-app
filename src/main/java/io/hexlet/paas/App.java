@@ -1,12 +1,9 @@
 package io.hexlet.paas;
 
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpServer;
+import io.javalin.Javalin;
+import io.javalin.http.Context;
 import io.sentry.Sentry;
-import java.io.IOException;
 import java.io.PrintStream;
-import java.net.InetSocketAddress;
-import java.nio.charset.StandardCharsets;
 
 /** Учебное приложение курса «Деплой на PaaS»: HTTP-контракт общий для всех стеков. */
 public final class App {
@@ -16,21 +13,34 @@ public final class App {
   private static final String HTML = "text/html; charset=utf-8";
   private static final String PLAIN = "text/plain; charset=utf-8";
 
-  private final String message;
-  private final PrintStream log;
+  private App() {}
 
-  App(String message, PrintStream log) {
-    this.message = message == null || message.isEmpty() ? DEFAULT_MESSAGE : message;
-    this.log = log;
+  /** Собирает приложение Javalin: маршруты, обработку ошибок и строку лога на каждый запрос. */
+  static Javalin create(String rawMessage, PrintStream log) {
+    String message = rawMessage == null || rawMessage.isEmpty() ? DEFAULT_MESSAGE : rawMessage;
+    return Javalin.create(config -> {
+      config.startup.showJavalinBanner = false;
+      config.requestLogger.http(
+          (ctx, ms) -> log.printf("%s %s %d%n", ctx.method(), ctx.path(), ctx.status().getCode()));
+      config.routes.get(
+          "/",
+          ctx ->
+              reply(
+                  ctx, 200, HTML, "<h1>" + HEADING + "</h1><p>" + escapeHtml(message) + "</p>\n"));
+      config.routes.get("/error", ctx -> fail());
+      config.routes.exception(
+          IllegalStateException.class,
+          (e, ctx) -> {
+            Sentry.captureException(e);
+            reply(ctx, 500, PLAIN, ERROR_TEXT + "\n");
+          });
+      config.routes.error(404, ctx -> reply(ctx, 404, PLAIN, "not found\n"));
+    });
   }
 
-  /** Запускает сервер на 0.0.0.0, порт 0 выбирает свободный. */
-  static HttpServer start(int port, String message, PrintStream log) throws IOException {
-    App app = new App(message, log);
-    HttpServer server = HttpServer.create(new InetSocketAddress("0.0.0.0", port), 0);
-    server.createContext("/", app::handle);
-    server.start();
-    return server;
+  // Jetty пишет заголовок как text/html;charset=utf-8, без пробела: тип и кодировка те же.
+  private static void reply(Context ctx, int status, String contentType, String body) {
+    ctx.status(status).contentType(contentType).result(body);
   }
 
   static String escapeHtml(String value) {
@@ -51,42 +61,13 @@ public final class App {
     throw new IllegalStateException(ERROR_TEXT);
   }
 
-  private void handle(HttpExchange exchange) throws IOException {
-    String path = exchange.getRequestURI().getPath();
-    int status = 200;
-    String contentType = PLAIN;
-    String body;
-    if (path.equals("/")) {
-      contentType = HTML;
-      body = "<h1>" + HEADING + "</h1><p>" + escapeHtml(message) + "</p>";
-    } else if (path.equals("/error")) {
-      status = 500;
-      body = ERROR_TEXT;
-      try {
-        fail();
-      } catch (IllegalStateException e) {
-        Sentry.captureException(e);
-      }
-    } else {
-      status = 404;
-      body = "not found";
-    }
-    byte[] payload = (body + "\n").getBytes(StandardCharsets.UTF_8);
-    exchange.getResponseHeaders().set("Content-Type", contentType);
-    exchange.sendResponseHeaders(status, payload.length);
-    try (var output = exchange.getResponseBody()) {
-      output.write(payload);
-    }
-    log.printf("%s %s %d%n", exchange.getRequestMethod(), path, status);
-  }
-
-  public static void main(String[] args) throws IOException {
+  public static void main(String[] args) {
     String dsn = System.getenv("SENTRY_DSN");
     if (dsn != null && !dsn.isEmpty()) {
       Sentry.init(options -> options.setDsn(dsn));
     }
     int port = Integer.parseInt(env("PORT", "3000"));
-    start(port, System.getenv("SERVER_MESSAGE"), System.out);
+    create(System.getenv("SERVER_MESSAGE"), System.out).start("0.0.0.0", port);
     System.out.println("Listening on http://0.0.0.0:" + port);
   }
 }

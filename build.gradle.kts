@@ -9,7 +9,9 @@ repositories {
 }
 
 dependencies {
+    implementation(libs.javalin)
     implementation(libs.sentry)
+    runtimeOnly(libs.slf4jSimple)
 
     errorprone(libs.errorprone)
 
