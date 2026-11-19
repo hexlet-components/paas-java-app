@@ -22,9 +22,14 @@ run = ["./gradlew --no-daemon classes testClasses", "hk install"]
 description = "Тесты HTTP-контракта приложения"
 run = "./gradlew test"
 
+[tasks.build]
+description = "Собрать приложение теми же шагами, что стадия сборки Dockerfile"
+run = "./gradlew installDist"
+
 [tasks.start]
-description = "Запустить приложение локально"
-run = "./gradlew run --quiet"
+description = "Собрать и запустить приложение командой из CMD Dockerfile"
+depends = ["build"]
+run = "build/install/paas-java-app/bin/paas-java-app"
 
 [tasks.check]
 description = "Все проверки, тот же набор, что гоняет CI"

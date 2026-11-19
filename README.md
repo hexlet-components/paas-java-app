@@ -49,6 +49,8 @@ mise run test
 PORT=3000 SERVER_MESSAGE="Первая публикация" mise run start
 ```
 
+`mise run build` повторяет стадию сборки `Dockerfile`, `mise run start` запускает приложение командой из его `CMD` и перед этим сам выполняет `build`.
+
 `make <задача>` вызывает ту же задачу mise.
 
 ## Проверки
