@@ -71,6 +71,10 @@ class DatabaseTest {
     try {
       HttpClient client = HttpClient.newHttpClient();
       URI uri = URI.create("http://127.0.0.1:" + server.port() + "/");
+      // HEAD присылают проверки платформы, посещением он не считается.
+      client.send(
+          HttpRequest.newBuilder(uri).method("HEAD", HttpRequest.BodyPublishers.noBody()).build(),
+          HttpResponse.BodyHandlers.discarding());
       for (int visit = 1; visit <= 2; visit++) {
         HttpResponse<String> response =
             client.send(HttpRequest.newBuilder(uri).build(), HttpResponse.BodyHandlers.ofString());
