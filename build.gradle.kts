@@ -11,6 +11,9 @@ repositories {
 dependencies {
     implementation(libs.javalin)
     implementation(libs.sentry)
+    implementation(libs.flywayCore)
+    implementation(libs.postgresql)
+    runtimeOnly(libs.flywayPostgresql)
     runtimeOnly(libs.slf4jSimple)
 
     errorprone(libs.errorprone)
@@ -39,6 +42,9 @@ tasks.withType<JavaCompile>().configureEach {
 
 tasks.test {
     useJUnitPlatform()
+    // Тесты с базой идут только при заданном TEST_DATABASE_URL, поэтому переменная входит
+    // во входы задачи: смена адреса перезапускает тесты, а не берёт прошлый результат.
+    inputs.property("testDatabaseUrl", providers.environmentVariable("TEST_DATABASE_URL").orElse(""))
 }
 
 spotless {

@@ -4,6 +4,8 @@ import io.javalin.Javalin;
 import io.javalin.http.Context;
 import io.sentry.Sentry;
 import java.io.PrintStream;
+import java.sql.SQLException;
+import javax.sql.DataSource;
 
 /** Учебное приложение курса «Деплой на PaaS»: HTTP-контракт общий для всех стеков. */
 public final class App {
@@ -15,8 +17,13 @@ public final class App {
 
   private App() {}
 
-  /** Собирает приложение Javalin: маршруты, обработку ошибок и строку лога на каждый запрос. */
+  /** Собирает приложение без базы: главная страница выходит без счётчика посещений. */
   static Javalin create(String rawMessage, PrintStream log) {
+    return create(rawMessage, log, null);
+  }
+
+  /** Собирает приложение Javalin: маршруты, обработку ошибок и строку лога на каждый запрос. */
+  static Javalin create(String rawMessage, PrintStream log, DataSource database) {
     String message = rawMessage == null || rawMessage.isEmpty() ? DEFAULT_MESSAGE : rawMessage;
     return Javalin.create(config -> {
       config.startup.showJavalinBanner = false;
@@ -24,12 +31,25 @@ public final class App {
           (ctx, ms) -> log.printf("%s %s %d%n", ctx.method(), ctx.path(), ctx.status().getCode()));
       config.routes.get(
           "/",
-          ctx ->
-              reply(
-                  ctx, 200, HTML, "<h1>" + HEADING + "</h1><p>" + escapeHtml(message) + "</p>\n"));
+          ctx -> {
+            String visits =
+                database == null ? "" : "<p>Посещений: " + Database.countVisit(database) + "</p>";
+            reply(
+                ctx,
+                200,
+                HTML,
+                "<h1>" + HEADING + "</h1><p>" + escapeHtml(message) + "</p>" + visits + "\n");
+          });
       config.routes.get("/error", ctx -> fail());
       config.routes.exception(
           IllegalStateException.class,
+          (e, ctx) -> {
+            Sentry.captureException(e);
+            reply(ctx, 500, PLAIN, ERROR_TEXT + "\n");
+          });
+      // Сбой базы обрабатывается как ошибка /error: событие в Sentry и ответ 500.
+      config.routes.exception(
+          SQLException.class,
           (e, ctx) -> {
             Sentry.captureException(e);
             reply(ctx, 500, PLAIN, ERROR_TEXT + "\n");
@@ -66,8 +86,16 @@ public final class App {
     if (dsn != null && !dsn.isEmpty()) {
       Sentry.init(options -> options.setDsn(dsn));
     }
+    // С DATABASE_URL приложение сначала применяет миграции и только потом начинает принимать
+    // запросы. Без неё оно работает без базы.
+    String databaseUrl = env("DATABASE_URL", "");
+    DataSource database = null;
+    if (!databaseUrl.isEmpty()) {
+      database = Database.dataSource(databaseUrl);
+      Database.migrate(database);
+    }
     int port = Integer.parseInt(env("PORT", "3000"));
-    create(System.getenv("SERVER_MESSAGE"), System.out).start("0.0.0.0", port);
+    create(System.getenv("SERVER_MESSAGE"), System.out, database).start("0.0.0.0", port);
     System.out.println("Listening on http://0.0.0.0:" + port);
   }
 }
